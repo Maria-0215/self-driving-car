@@ -1,1 +1,29 @@
+#include "stm32f10x.h"
+#include "sys.h"
 
+int main(void)
+{
+    /* ================== 系统初始化 ================== */
+    Stm32_Clock_Init(9);                 // 外部8MHz晶振，9倍频，主频72MHz
+    MY_NVIC_PriorityGroupConfig(2);      // 中断优先级分组：2位抢占，2位响应
+    
+    /* ================== 外设初始化 ================== */
+    uart_init(115200);                   // 串口初始化：波特率115200
+    colorful_led_Init();                 // 炫彩灯初始化
+    JTAG_Set(JTAG_SWD_DISABLE);          // 关闭JTAG接口，保留SWD
+    JTAG_Set(SWD_ENABLE);                // 再次开启SWD，确保调试口正常
+    
+    /* ================== 开机提示 ================== */
+    printf("QST青软\r\n");               // 串口打印启动信息
+    
+    /* ================== 主循环 ================== */
+    while(1)
+    {
+        if(USART_RX_STA == 1)            // 判断是否收到完整数据
+        {
+            L_runingled();               // 收到数据则点亮炫彩灯
+        }
+        
+        delay_ms(100);                   // 主循环延时100ms
+    }
+}
