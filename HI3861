@@ -1,1 +1,90 @@
+#include "motor.h"
 
+// 定义全局变量，用于存储当前的PWM占空比
+u16 PWM_A = 0;
+u16 PWM_B = 0;
+
+// 简化取绝对值函数
+u32 myabs(long int a)
+{
+    return a < 0 ? -a : a;
+}
+
+// 电机方向控制引脚初始化 (合并为一次初始化)
+void Motor_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+    // 一次配置4个方向引脚 (PB13, PB14, PB15, PB3)
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15 | GPIO_Pin_3;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+    // 初始状态全部置高（停止）
+    GPIO_SetBits(GPIOB, GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15 | GPIO_Pin_3);
+}
+
+// PWM 初始化 (TIM4_CH1 -> PB6, TIM4_CH2 -> PB7)
+void PWM_Init(u16 arr, u16 psc)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+    TIM_OCInitTypeDef TIM_OCInitStructure;
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
+
+    // 配置 PB6 和 PB7 为复用推挽输出
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+    // 配置定时器基础参数
+    TIM_TimeBaseStructure.TIM_Period = arr;
+    TIM_TimeBaseStructure.TIM_Prescaler = psc;
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM4, &TIM_TimeBaseStructure);
+
+    // 配置 PWM 模式
+    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+    TIM_OCInitStructure.TIM_Pulse = 0;
+    TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+    TIM_OC1Init(TIM4, &TIM_OCInitStructure);
+    TIM_OC2Init(TIM4, &TIM_OCInitStructure);
+
+    // 使能定时器
+    TIM_Cmd(TIM4, ENABLE);
+}
+
+// 设置电机速度和方向
+void Set_Pwm(int moto1, int moto2)
+{
+    // 右电机控制 (motol)
+    if (moto1 > 0) { // 正转
+        GPIO_ResetBits(GPIOB, GPIO_Pin_13);
+        GPIO_SetBits(GPIOB, GPIO_Pin_14);
+    } else {         // 反转
+        GPIO_SetBits(GPIOB, GPIO_Pin_13);
+        GPIO_ResetBits(GPIOB, GPIO_Pin_14);
+    }
+    PWM_A = myabs(moto1);
+    if (PWM_A > 7199) PWM_A = 7199;
+    TIM_SetCompare1(TIM4, PWM_A);
+
+    // 左电机控制 (moto2)
+    if (moto2 > 0) { // 正转
+        GPIO_ResetBits(GPIOB, GPIO_Pin_15);
+        GPIO_SetBits(GPIOB, GPIO_Pin_3);
+    } else {         // 反转
+        GPIO_SetBits(GPIOB, GPIO_Pin_15);
+        GPIO_ResetBits(GPIOB, GPIO_Pin_3);
+    }
+    PWM_B = myabs(moto2);
+    if (PWM_B > 7199) PWM_B = 7199;
+    TIM_SetCompare2(TIM4, PWM_B);
+}
