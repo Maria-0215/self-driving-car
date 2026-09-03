@@ -1,0 +1,83 @@
+#include <stdio.h>
+#include <unistd.h>
+#include "ohos_init.h"
+#include "cmsis_os2.h"
+#include "wifi_iot_gpio.h"
+#include "wifi_iot_gpio_ex.h"
+#include "hi_io.h"
+#include "hi_time.h"
+
+// 定义超声波模块引脚 (请根据实际板卡接线调整)
+#define TRIG_GPIO 7
+#define ECHO_GPIO 8
+#define GPIO_FUNC 0
+
+// 避障距离阈值 (单位: cm)
+#define AVOID_DISTANCE 20 
+
+// 超声波测距函数
+float GetDistance(void)
+{
+    static unsigned long start_time = 0, time = 0;
+    float distance = 0.0;
+    IotGpioValue value = IOT_GPIO_VALUE0;
+
+    // 1. 触发测距
+    IoTGpioSetOutputVal(TRIG_GPIO, IOT_GPIO_VALUE1);
+    IoTUdelay(20); // 拉高至少10us
+    IoTGpioSetOutputVal(TRIG_GPIO, IOT_GPIO_VALUE0);
+
+    // 2. 等待ECHO高电平并记录时间
+    while (IoTGpioGetInputVal(ECHO_GPIO, &value) != 0) {
+        if (value == IOT_GPIO_VALUE1) {
+            start_time = IoTGetUs();
+            break;
+        }
+    }
+
+    // 3. 等待ECHO低电平并计算时间差
+    while (IoTGpioGetInputVal(ECHO_GPIO, &value) != 0) {
+        if (value == IOT_GPIO_VALUE0 && start_time != 0) {
+            time = IoTGetUs() - start_time;
+            start_time = 0;
+            break;
+        }
+    }
+
+    // 4. 距离计算公式: (时间 * 声速) / 2
+    distance = time * 0.034 / 2;
+    return distance;
+}
+
+// 避障控制任务
+void CarAvoidTask(void)
+{
+    // 初始化GPIO
+    IoTIoSetFunc(TRIG_GPIO, GPIO_FUNC);
+    IoTGpioSetDir(TRIG_GPIO, IOT_GPIO_DIR_OUT);
+    
+    IoTIoSetFunc(ECHO_GPIO, GPIO_FUNC);
+    IoTGpioSetDir(ECHO_GPIO, IOT_GPIO_DIR_IN);
+
+    printf("Ultrasonic Avoidance Start!\r\n");
+
+    while (1) {
+        float dist = GetDistance();
+        printf("Dist: %.2f cm\r\n", dist);
+
+        if (dist > 0 && dist < AVOID_DISTANCE) {
+            // 距离小于阈值，执行避障动作 (如停止或转向)
+            printf("Obstacle! Stop or Turn.\r\n");
+            // 根据青软小车控制协议调用动作函数，例如：
+            // car_stop(); 或 car_left(); 
+        } else {
+            // 前方无障碍，执行前进动作
+            // car_forward();
+            printf("Clear! Go Forward.\r\n");
+        }
+
+        osDelay(100); // 延时100ms
+    }
+}
+
+APP_FEATURE_INIT(CarAvoidTask);
